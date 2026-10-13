@@ -1,0 +1,12 @@
+{
+  "model": "google/embeddinggemma-2",
+  "count": 14581,
+  "dim": 256,
+  "seed": 123,
+  "rounds": 2,
+  "calibration": true,
+  "prompt": "task: sentence similarity | query: ",
+  "source_version": "rotated1bit-v2-2026-10",
+  "bytes_per_candidate": 32,
+  "original_csv_sha256": "824efefb01ee69c9b2fad4e8e87504d418a66b45d143a71b10c3ead904b8ce10"
+}

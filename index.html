@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Semantic Query Suggestions Relaxation · 1-bit</title>
+<style>
+:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background: #0b1020; color: #e8ecfa; }
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(ellipse at 16% 0%, #20254c 0%, #0b1020 53%); min-height: 100vh; }
+main { max-width: 1050px; margin: auto; padding: 46px 24px 80px; }
+.eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: .2em; font-weight: 750; color: #a9a8ff; }
+.hero { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+h1 { font-size: clamp(30px, 5vw, 48px); margin: 12px 0; letter-spacing: -.05em; line-height: 1.08; }
+.subtitle { color: #abb3cd; max-width: 700px; line-height: 1.6; font-size: 15px; }
+.pill { display: inline-flex; align-items: center; border: 1px solid #394163; border-radius: 99px; padding: 8px 13px; color: #c4d0ff; font-size: 12px; white-space: nowrap; }
+.dot { display: inline-block; width: 7px; height: 7px; background: #f3b655; border-radius: 50%; margin-right: 8px; }
+
+/* Reduced padding and tighter margins for the panels */
+.panel { background: #151c32d9; border: 1px solid #303955; border-radius: 19px; box-shadow: 0 14px 60px #0003; padding: 16px 20px; margin-top: 25px; }
+.panel h2 { margin: 0 0 4px; font-size: 16px; }
+.small { font-size: 13px; color: #97a3c6; line-height: 1.5; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.btn { border: 0; border-radius: 10px; background: #9f99ff; color: #0d1030; padding: 10px 16px; font-weight: 750; cursor: pointer; font-size: 13px; transition: filter 0.2s; }
+.btn.secondary { background: #303856; color: #e4e6ff; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:hover:not(:disabled) { filter: brightness(1.1); }
+
+/* Compacted stats grid */
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.stat { background: #0d1428; border: 1px solid #293454; border-radius: 10px; padding: 10px 14px; }
+.stat label { display: block; color: #929ec1; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.stat strong { display: block; margin-top: 4px; font-size: 16px; }
+
+/* Flyout and Search specific styles */
+.search-wrapper { position: relative; margin: 20px 0 8px; }
+.search-bar { display: flex; gap: 10px; }
+input, select { outline: none; background: #0c1428; border: 1px solid #3b476a; border-radius: 11px; color: #f5f5ff; padding: 15px; font-size: 16px; transition: border-color 0.2s, box-shadow 0.2s; }
+input { width: 100%; }
+input:focus { border-color: #aba5ff; box-shadow: 0 0 0 3px #7774f522; }
+
+/* Styled dropdowns */
+select { font-size: 13px; padding: 10px; cursor: pointer; }
+#topk { padding: 0 16px; width: 80px; font-size: 15px; text-align: center; }
+#device { padding: 8px; height: 100%; border-radius: 8px; }
+
+.results-flyout { 
+    position: absolute; top: calc(100% + 8px); left: 0; right: 0; 
+    background: #12192e; border: 1px solid #303955; border-radius: 16px; 
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4); z-index: 100; 
+    max-height: 400px; overflow-y: auto; padding: 8px;
+    display: none; opacity: 0; transform: translateY(-5px);
+    transition: opacity 0.2s, transform 0.2s;
+}
+.results-flyout.active { display: grid; opacity: 1; transform: translateY(0); gap: 4px; }
+.result { 
+    background: transparent; border: none; border-radius: 10px; padding: 6px 16px; 
+    display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; 
+    cursor: pointer; transition: background 0.15s; 
+}
+.result:hover { background: #1e2846; }
+.rank { color: #5a6691; font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; }
+.term { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.score { font-size: 12px; font-variant-numeric: tabular-nums; color: #9f99ff; background: #1f2545; padding: 4px 8px; border-radius: 6px; }
+
+.feedback { font-size: 13px; color: #c2c8df; min-height: 20px; margin-top: 10px; }
+.error { color: #ffadbb; }
+.loading-track { background: #273151; border-radius: 20px; height: 5px; margin-top: 12px; overflow: hidden; }
+.loading-bar { height: 100%; background: #a89cff; width: 0; transition: width .2s; }
+.hint { border-left: 3px solid #8b86fa; padding-left: 12px; color: #9ca9ce; font-size: 13px; margin-top: 20px; line-height: 1.65; }
+code { font-size: 12px; background: #242d4a; border-radius: 5px; padding: 2px 5px; }
+.footer { font-size: 12px; color: #7f8aa9; margin-top: 25px; line-height: 1.5; }
+
+@media(max-width: 700px) {
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .search-bar { flex-direction: column; }
+    #topk { width: 100%; padding: 15px; }
+    .hero { flex-direction: column; }
+    .result { grid-template-columns: 22px 1fr auto; gap: 8px; padding: 10px; }
+}
+</style>
+</head>
+<body><main>
+<div class="hero">
+    <div>
+        <div class="eyebrow">SearchHub Client-side</div>
+        <h1>Semantic Query <span style="color:#a6a2ff">Intent Suggestions</span></h1>
+    </div>
+    <div class="pill"><span class="dot" id="statusDot"></span><span id="statusLabel">Not loaded</span></div>
+</div>
+
+<section class="panel">
+    <div class="toolbar">
+        <div>
+            <h2 style="display:inline-block; margin-right: 10px;">Engine setup</h2>
+            <span class="small" id="setupState">Import 256D IntentEmbedding · Place files in <code>data/</code></span>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <select id="device"><option value="webgpu">WebGPU · q4</option><option value="wasm">WASM · q4</option></select>
+            <button id="loadBtn" class="btn">Initialize engine</button>
+        </div>
+    </div>
+    <div class="stat-grid">
+        <div class="stat"><label>Candidate queries</label><strong id="candidateCount">—</strong></div>
+        <div class="stat"><label>Stored dimensions</label><strong>256 dims</strong></div>
+        <div class="stat"><label>Index size</label><strong id="indexSize">—</strong></div>
+        <div class="stat"><label>Backend</label><strong id="backendLabel">—</strong></div>
+    </div>
+    <div class="loading-track"><div class="loading-bar" id="progress"></div></div>
+</section>
+
+<section class="panel">
+    <div class="toolbar">
+        <div><h2>Explore suggestions</h2></div>
+        <span class="pill" id="timePill">No searches yet</span>
+    </div>
+    
+    <div class="search-wrapper">
+        <form id="searchForm" class="search-bar">
+            <input id="query" autocomplete="off" spellcheck="false" placeholder="Start typing... (e.g. shirtjacke jeansblau)" aria-label="Search query">
+            <select id="topk" title="Number of results to show">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+            </select>
+        </form>
+        <!-- Flyout Container -->
+        <div class="results-flyout" id="results"></div>
+    </div>
+    
+    <div class="feedback" id="feedback" role="status">Initialize the engine above to start searching.</div>
+</section>
+
+<div class="footer">Local inference after download · no query API · Hugging Face model download required on first load. The browser encodes the query with Transformers.js; stored candidate vectors stay packed to one bit per dimension.</div>
+</main>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+let engine = null, embedder = null, busy = false, debounceTimer = null;
+
+const float32Url = async (url, expected) => { const r = await fetch(url); if(!r.ok) throw new Error(`Missing ${url} (${r.status})`); const buf = await r.arrayBuffer(); if(buf.byteLength !== expected*4) throw new Error(`Wrong size for ${url}`); return new Float32Array(buf); };
+const jsonUrl = async (url) => { const r = await fetch(url); if(!r.ok) throw new Error(`Missing ${url} (${r.status}). Run export_index.py first.`); return r.json(); };
+
+function hadamard(vector) { const data = new Float32Array(vector); let offset = 0, remaining = data.length; while(remaining) { const width = 2**Math.floor(Math.log2(remaining)); for(let step=1; step<width; step*=2) { for(let block=offset; block<offset+width; block+=step*2) { for(let j=0; j<step; j++) { let a = data[block+j], b = data[block+j+step]; data[block+j] = Math.fround(a+b); data[block+j+step] = Math.fround(a-b); } } } const f = Math.fround(1/Math.sqrt(width)); for(let j=offset; j<offset+width; j++) data[j] = Math.fround(data[j]*f); offset+=width; remaining-=width; } return data; }
+function rotate(vec, perms) { let out = hadamard(vec); for(const perm of perms) { const shuffled = new Float32Array(vec.length); for(let j=0; j<vec.length; j++) shuffled[j] = out[perm[j]]; out = hadamard(shuffled); } return out; }
+function normalizedTruncated(vector, dim) { if(vector.length < dim) throw new Error(`Model returned ${vector.length} dims, expected at least ${dim}`); const v = new Float32Array(dim); let ss = 0; for(let j=0; j<dim; j++) { v[j] = vector[j]; ss+=v[j]*v[j]; } const n = Math.max(Math.sqrt(ss), 1e-12); for(let j=0; j<dim; j++) v[j]/=n; return v; }
+
+function searchScores(raw, idx) {
+    const {meta, packed, invNorm, shift, scale, perms, candidates} = idx;
+    const dim = meta.dim;
+    const q = rotate(normalizedTruncated(raw, dim), perms);
+    const c = Math.fround(Math.sqrt(2/Math.PI));
+    const weights = new Float32Array(dim);
+    
+    let correction = 0, sumW = 0;
+    for(let j=0; j<dim; j++) { 
+        weights[j] = Math.fround(q[j]/scale[j]); 
+        sumW += weights[j]; 
+        correction -= q[j]*shift[j]; 
+    }
+    
+    const constant = Math.fround(correction - c*sumW);
+    const nbytes = dim/8;
+    const byteLut = new Float32Array(nbytes*256);
+    
+    for(let b=0; b<nbytes; b++) {
+        for(let val=0; val<256; val++) {
+            let s = 0;
+            for(let bit=0; bit<8; bit++) {
+                if(val & (128>>bit)) s += weights[b*8+bit];
+            }
+            byteLut[b*256+val] = Math.fround(s);
+        }
+    }
+    
+    const scores = new Float32Array(candidates.length);
+    
+    if (nbytes === 32) {
+        for(let i=0; i<candidates.length; i++) {
+            const base = i * 32;
+            const total = 
+                byteLut[packed[base]] + byteLut[256 + packed[base+1]] + byteLut[512 + packed[base+2]] + byteLut[768 + packed[base+3]] + 
+                byteLut[1024 + packed[base+4]] + byteLut[1280 + packed[base+5]] + byteLut[1536 + packed[base+6]] + byteLut[1792 + packed[base+7]] + 
+                byteLut[2048 + packed[base+8]] + byteLut[2304 + packed[base+9]] + byteLut[2560 + packed[base+10]] + byteLut[2816 + packed[base+11]] + 
+                byteLut[3072 + packed[base+12]] + byteLut[3328 + packed[base+13]] + byteLut[3584 + packed[base+14]] + byteLut[3840 + packed[base+15]] + 
+                byteLut[4096 + packed[base+16]] + byteLut[4352 + packed[base+17]] + byteLut[4608 + packed[base+18]] + byteLut[4864 + packed[base+19]] + 
+                byteLut[5120 + packed[base+20]] + byteLut[5376 + packed[base+21]] + byteLut[5632 + packed[base+22]] + byteLut[5888 + packed[base+23]] + 
+                byteLut[6144 + packed[base+24]] + byteLut[6400 + packed[base+25]] + byteLut[6656 + packed[base+26]] + byteLut[6912 + packed[base+27]] + 
+                byteLut[7168 + packed[base+28]] + byteLut[7424 + packed[base+29]] + byteLut[7680 + packed[base+30]] + byteLut[7936 + packed[base+31]];
+                
+            scores[i] = Math.fround((2*c*total + constant)*invNorm[i]);
+        }
+    } else {
+        for(let i=0; i<candidates.length; i++) {
+            let total = 0;
+            const base = i*nbytes;
+            for(let b=0; b<nbytes; b++) total += byteLut[b*256+packed[base+b]];
+            scores[i] = Math.fround((2*c*total + constant)*invNorm[i]);
+        }
+    }
+    return scores;
+}
+
+async function loadIndex() {
+    const meta = await jsonUrl('./data/index.json');
+    if(meta.dim !== 256 || meta.model !== 'google/embeddinggemma-2') throw new Error('Expected an exported EmbeddingGemma 2 256-bit index');
+    const candidates = await jsonUrl('./data/candidates.json');
+    if(candidates.length !== meta.count) throw new Error('Candidate count mismatch');
+    const bytes = meta.count * meta.dim/8;
+    const r = await fetch('./data/packed.bin');
+    if(!r.ok) throw new Error('Missing packed index');
+    const packed = new Uint8Array(await r.arrayBuffer());
+    if(packed.byteLength !== bytes) throw new Error('Packed index size mismatch');
+    const [invNorm, shift, scale, perms] = await Promise.all([
+        float32Url('./data/inverse_norms.bin', meta.count),
+        float32Url('./data/shift.bin', meta.dim),
+        float32Url('./data/scale.bin', meta.dim),
+        jsonUrl('./data/permutations.json')
+    ]);
+    if(perms.length !== meta.rounds || perms.some(x => x.length !== meta.dim)) throw new Error('Rotation permutations mismatch');
+    return {meta, candidates, packed, invNorm, shift, scale, perms};
+}
+
+function setStatus(label, dot='#f3b655') { $('statusLabel').textContent = label; $('statusDot').style.background = dot; }
+function message(text, err=false) { $('feedback').textContent = text; $('feedback').className = 'feedback'+(err?' error':''); }
+
+$('loadBtn').addEventListener('click', async () => {
+    if(busy || embedder) return;
+    busy = true; $('loadBtn').disabled = true;
+    try {
+        setStatus('Loading index'); message('Reading packed 1-bit index…');
+        engine = await loadIndex();
+        $('candidateCount').textContent = engine.candidates.length.toLocaleString();
+        $('indexSize').textContent = (engine.packed.byteLength/1024).toFixed(1) + ' KiB';$('progress').style.width = '18%';
+        
+        message('Downloading/loading EmbeddingGemma 2 (first load can be large)…');
+        setStatus('Loading model');
+        const {pipeline} = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1');
+        const device = $('device').value;
+        embedder = await pipeline('feature-extraction', 'onnx-community/embeddinggemma-2-ONNX', {
+            device, dtype: 'q4',
+            progress_callback: p => { if(p.status === 'progress' && p.total) $('progress').style.width = (18 + Math.min(78, Math.round(78 * p.loaded/p.total))) + '%'; }
+        });
+        
+        $('progress').style.width = '100%';
+        $('backendLabel').textContent = device.toUpperCase();$('device').disabled = true;
+        $('loadBtn').textContent = 'Engine ready';$('setupState').textContent = `Seed ${engine.meta.seed} · ${engine.meta.rounds} rotations`;
+        setStatus('Ready', '#53d99d');
+        message('Ready — start typing to see suggestions.');
+        $('query').focus();
+    } catch(err) {
+        console.error(err);
+        setStatus('Failed', '#ff7f98');
+        message(err.message || String(err), true);
+        $('loadBtn').disabled = false;
+        $('loadBtn').textContent = 'Retry initialization';
+    } finally { busy = false; }
+});
+
+const executeSearch = async () => {
+    if(!embedder || busy) return;
+    const query = $('query').value.trim();
+    const flyout = $('results');
+    
+    if(!query) {
+        flyout.classList.remove('active');
+        message('Ready — start typing to see suggestions.');
+        return;
+    }
+    
+    busy = true;
+    const start = performance.now();
+    try {
+        const embedding = await embedder(engine.meta.prompt + query, {pooling: 'mean', normalize: true});
+        const scores = searchScores(embedding.data, engine);
+        const k = Math.min(parseInt($('topk').value, 10), scores.length);
+        
+        const ranked = Array.from(scores, (score, i) => ({score, i}))
+            .sort((a, b) => b.score - a.score || a.i - b.i)
+            .slice(0, k);
+        
+        const ms = performance.now() - start;
+        $('timePill').textContent = ms.toFixed(1) + ' ms total';
+        
+        flyout.replaceChildren();
+        for(let rank = 0; rank < ranked.length; rank++) {
+            const {score, i} = ranked[rank];
+            const div = document.createElement('div');
+            div.className = 'result';
+            
+            const number = document.createElement('span');
+            number.className = 'rank';
+            number.textContent = String(rank+1).padStart(2, '0');
+            
+            const title = document.createElement('div');
+            title.className = 'term';
+            title.textContent = engine.candidates[i];
+            
+            const value = document.createElement('span');
+            value.className = 'score';
+            value.textContent = score.toFixed(4);
+            
+            div.append(number, title, value);
+            
+            div.addEventListener('click', () => {
+                $('query').value = engine.candidates[i];
+                flyout.classList.remove('active');
+            });
+            
+            flyout.append(div);
+        }
+        
+        flyout.classList.add('active');
+        message(`${ranked.length} suggestions · ${(performance.now() - start).toFixed(1)} ms`);
+    } catch(err) {
+        console.error(err);
+        message(err.message || String(err), true);
+    } finally { busy = false; }
+};
+
+$('query').addEventListener('input', () => {     clearTimeout(debounceTimer);     debounceTimer = setTimeout(executeSearch, 200); });$('topk').addEventListener('change', () => {
+    if($('query').value.trim()) { clearTimeout(debounceTimer); executeSearch(); }
+});
+
+$('searchForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    clearTimeout(debounceTimer);
+    executeSearch();
+});
+
+document.addEventListener('click', (e) => {
+    if (!$('searchForm').contains(e.target) && !$('results').contains(e.target)) {$('results').classList.remove('active');
+    }
+});
+</script></body></html>
