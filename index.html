@@ -38,9 +38,9 @@ input, select { outline: none; background: #0c1428; border: 1px solid #3b476a; b
 input { width: 100%; }
 input:focus { border-color: #aba5ff; box-shadow: 0 0 0 3px #7774f522; }
 
-/* Styled dropdowns */
+/* Styled dropdowns and small inputs */
 select { font-size: 13px; padding: 10px; cursor: pointer; }
-#topk { padding: 0 16px; width: 80px; font-size: 15px; text-align: center; }
+#topk, #threshold { padding: 0 16px; width: 85px; font-size: 14px; text-align: center; }
 #device { padding: 8px; height: 100%; border-radius: 8px; }
 
 .results-flyout { 
@@ -53,7 +53,7 @@ select { font-size: 13px; padding: 10px; cursor: pointer; }
 }
 .results-flyout.active { display: grid; opacity: 1; transform: translateY(0); gap: 4px; }
 .result { 
-    background: transparent; border: none; border-radius: 10px; padding: 6px 16px; 
+    background: transparent; border: none; border-radius: 10px; padding: 12px 16px; 
     display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; 
     cursor: pointer; transition: background 0.15s; 
 }
@@ -61,6 +61,7 @@ select { font-size: 13px; padding: 10px; cursor: pointer; }
 .rank { color: #5a6691; font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; }
 .term { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
 .score { font-size: 12px; font-variant-numeric: tabular-nums; color: #9f99ff; background: #1f2545; padding: 4px 8px; border-radius: 6px; }
+.no-results { padding: 16px; color: #9ca9ce; font-size: 14px; text-align: center; }
 
 .feedback { font-size: 13px; color: #c2c8df; min-height: 20px; margin-top: 10px; }
 .error { color: #ffadbb; }
@@ -73,7 +74,7 @@ code { font-size: 12px; background: #242d4a; border-radius: 5px; padding: 2px 5p
 @media(max-width: 700px) {
     .stat-grid { grid-template-columns: repeat(2, 1fr); }
     .search-bar { flex-direction: column; }
-    #topk { width: 100%; padding: 15px; }
+    #topk, #threshold { width: 100%; padding: 15px; }
     .hero { flex-direction: column; }
     .result { grid-template-columns: 22px 1fr auto; gap: 8px; padding: 10px; }
 }
@@ -82,8 +83,8 @@ code { font-size: 12px; background: #242d4a; border-radius: 5px; padding: 2px 5p
 <body><main>
 <div class="hero">
     <div>
-        <div class="eyebrow">SearchHub Client-side</div>
-        <h1>Semantic Query <span style="color:#a6a2ff">Intent Suggestions</span></h1>
+        <div class="eyebrow">Client-side search</div>
+        <h1>Semantic Query <span style="color:#a6a2ff">Suggestions</span></h1>
     </div>
     <div class="pill"><span class="dot" id="statusDot"></span><span id="statusLabel">Not loaded</span></div>
 </div>
@@ -101,7 +102,7 @@ code { font-size: 12px; background: #242d4a; border-radius: 5px; padding: 2px 5p
     </div>
     <div class="stat-grid">
         <div class="stat"><label>Candidate queries</label><strong id="candidateCount">—</strong></div>
-        <div class="stat"><label>Stored dimensions</label><strong>256 dims</strong></div>
+        <div class="stat"><label>Stored dimensions</label><strong>256 bits</strong></div>
         <div class="stat"><label>Index size</label><strong id="indexSize">—</strong></div>
         <div class="stat"><label>Backend</label><strong id="backendLabel">—</strong></div>
     </div>
@@ -116,7 +117,8 @@ code { font-size: 12px; background: #242d4a; border-radius: 5px; padding: 2px 5p
     
     <div class="search-wrapper">
         <form id="searchForm" class="search-bar">
-            <input id="query" autocomplete="off" spellcheck="false" placeholder="Start typing... (e.g. shirtjacke jeansblau für den winter)" aria-label="Search query">
+            <input id="query" autocomplete="off" spellcheck="false" placeholder="Start typing... (e.g. shirtjacke jeansblau aus weichem material)" aria-label="Search query">
+            <input id="threshold" type="number" step="0.05" value="0.9" title="Minimum Similarity Score" aria-label="Minimum Similarity Score">
             <select id="topk" title="Number of results to show">
                 <option value="5">5</option>
                 <option value="10" selected>10</option>
@@ -273,9 +275,13 @@ const executeSearch = async () => {
     try {
         const embedding = await embedder(engine.meta.prompt + query, {pooling: 'mean', normalize: true});
         const scores = searchScores(embedding.data, engine);
-        const k = Math.min(parseInt($('topk').value, 10), scores.length);
         
+        const k = parseInt($('topk').value, 10);
+        const minScore = parseFloat($('threshold').value) || 0;
+        
+        // Use .filter() to discard results below the minimum threshold before sorting and slicing
         const ranked = Array.from(scores, (score, i) => ({score, i}))
+            .filter(item => item.score >= minScore)
             .sort((a, b) => b.score - a.score || a.i - b.i)
             .slice(0, k);
         
@@ -283,31 +289,39 @@ const executeSearch = async () => {
         $('timePill').textContent = ms.toFixed(1) + ' ms total';
         
         flyout.replaceChildren();
-        for(let rank = 0; rank < ranked.length; rank++) {
-            const {score, i} = ranked[rank];
-            const div = document.createElement('div');
-            div.className = 'result';
-            
-            const number = document.createElement('span');
-            number.className = 'rank';
-            number.textContent = String(rank+1).padStart(2, '0');
-            
-            const title = document.createElement('div');
-            title.className = 'term';
-            title.textContent = engine.candidates[i];
-            
-            const value = document.createElement('span');
-            value.className = 'score';
-            value.textContent = score.toFixed(4);
-            
-            div.append(number, title, value);
-            
-            div.addEventListener('click', () => {
-                $('query').value = engine.candidates[i];
-                flyout.classList.remove('active');
-            });
-            
-            flyout.append(div);
+        
+        if (ranked.length === 0) {
+            const noResults = document.createElement('div');
+            noResults.className = 'no-results';
+            noResults.textContent = `No matches found with a score of ${minScore} or higher.`;
+            flyout.append(noResults);
+        } else {
+            for(let rank = 0; rank < ranked.length; rank++) {
+                const {score, i} = ranked[rank];
+                const div = document.createElement('div');
+                div.className = 'result';
+                
+                const number = document.createElement('span');
+                number.className = 'rank';
+                number.textContent = String(rank+1).padStart(2, '0');
+                
+                const title = document.createElement('div');
+                title.className = 'term';
+                title.textContent = engine.candidates[i];
+                
+                const value = document.createElement('span');
+                value.className = 'score';
+                value.textContent = score.toFixed(4);
+                
+                div.append(number, title, value);
+                
+                div.addEventListener('click', () => {
+                    $('query').value = engine.candidates[i];
+                    flyout.classList.remove('active');
+                });
+                
+                flyout.append(div);
+            }
         }
         
         flyout.classList.add('active');
@@ -318,8 +332,17 @@ const executeSearch = async () => {
     } finally { busy = false; }
 };
 
-$('query').addEventListener('input', () => {     clearTimeout(debounceTimer);     debounceTimer = setTimeout(executeSearch, 200); });$('topk').addEventListener('change', () => {
+$('query').addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(executeSearch, 250);
+});
+
+$('topk').addEventListener('change', () => {
     if($('query').value.trim()) { clearTimeout(debounceTimer); executeSearch(); }
+});
+
+$('threshold').addEventListener('input', () => {
+    if($('query').value.trim()) { clearTimeout(debounceTimer); debounceTimer = setTimeout(executeSearch, 250); }
 });
 
 $('searchForm').addEventListener('submit', (e) => {
